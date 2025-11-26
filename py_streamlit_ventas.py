@@ -14,7 +14,13 @@ st.set_page_config(
 )
 
 # Cadena por defecto (puedes modificarla aquí)
-DEFAULT_DB_URI = "mysql+pymysql://root@localhost:3306/VENTAS"
+# DEFAULT_DB_URI = "mysql+pymysql://root@localhost:3306/VENTAS"
+DEFAULT_DB_URI = "mysql+pymysql://sql5809370:ljmKmE64CM@sql5.freesqldatabase.com:3306/sql5809370"
+#Host: sql5.freesqldatabase.com
+#Database name: sql5809370
+#Database user: sql5809370
+#Database password: ljmKmE64CM
+#Port number: 3306
 
 # ============================================================
 # FUNCIÓN DE CONEXIÓN (SIN CACHE → evita error de pickling)
@@ -267,27 +273,43 @@ with tab_tiempo:
             st.plotly_chart(fig, use_container_width=True)
 
 with tab_productos:
-    st.subheader("Productos/Clientes")
-    df_prod=(
-        df_filtrado
-        .groupby('descripcion', as_index=False)['monto_neto']
-        .sum()
-        .sort_values('monto_neto', ascending=False)
-        .head(10)
-    )
-    fig = px.bar(df_prod, 
-                 x='descripcion', 
-                 y='monto_neto', 
-                 title='Ventas netas por producto')
-    fig.update_layout(xaxis_title="Producto", yaxis_title="Ventas Netas")
-    fig.update_traces(textposition='outside')
-    st.plotly_chart(fig, use_container_width=True)
-with tab_geograf:
-    st.subheader("Geografía")
-with tab_tipo_pago: 
-    st.subheader("Métodos de Pago")
 
-st.caption("UNIVALLE - ASIGNATURA BASES DE DATOS I 2025/II")
+    col1_prod, col2_prod = st.columns(2)
+    with col1_prod:
+        st.subheader("Productos/Clientes")
+        df_prod=(
+            df_filtrado
+            .groupby('descripcion', as_index=False)['monto_neto']
+            .sum()
+            .sort_values('monto_neto', ascending=False)
+            .head(10)
+        )
+        fig = px.bar(df_prod, 
+                    x='descripcion', 
+                    y='monto_neto', 
+                    title='Ventas netas por producto')
+        fig.update_layout(xaxis_title="Producto", yaxis_title="Ventas Netas")
+        fig.update_traces(textposition='outside')
+        st.plotly_chart(fig, use_container_width=True)
+    with col2_prod:
+        st.markdown("### Diagrama de Cajas montos netos por producto")
+        top_productos=(
+            df_filtrado
+            .groupby('descripcion')['monto_neto']
+            .sum()
+            .sort_values(ascending=False)
+            .head(10)
+            .index
+        )
+        df_box= df_filtrado[df_filtrado['descripcion'].isin(top_productos)]
+        fig = px.box(df_box, 
+                    x='descripcion', 
+                    y='monto_neto', 
+                    title='Ventas netas por producto')
+        fig.update_layout(xaxis_title="Producto", yaxis_title="Ventas Netas")
+        st.plotly_chart(fig, use_container_width=True)
+
+
 with tab_geograf:
     st.subheader("Geografía")
     col_g1, col_g2 = st.columns(2)
@@ -312,16 +334,19 @@ with tab_geograf:
         df_tree_agg= df_filtrado.copy()
         df_tree_agg=(
             df_tree_agg
-            .groupby(['pais_fabrica', 'ciudad_cliente', 'descripcion'], as_index=False)['monto_neto']
+            .groupby([ 'ciudad_cliente', 'descripcion'], as_index=False)['monto_neto']
             .sum()
         )
         fig = px.treemap(df_tree_agg, 
-                        path=['pais_fabrica', 'ciudad_cliente', 'descripcion'], 
+                        path=['ciudad_cliente', 'descripcion'], 
                         values='monto_neto', 
                         title='Ventas netas por país de fabrica')
-        fig.update_layout(xaxis_title="País", yaxis_title="Ventas Netas")        
+        fig.update_layout(xaxis_title ="País", yaxis_title="Ventas Netas")        
         st.plotly_chart(fig, use_container_width=True)
-        with tab_tipo_pago: 
+
+
+
+with tab_tipo_pago: 
     st.subheader("Métodos de Pago")
     col_tp, col_tp2 = st.columns(2)
     with col_tp:
@@ -357,4 +382,5 @@ with tab_geograf:
                     title='Ventas netas por tipo de pago')
         fig.update_layout(xaxis_title="Tipo de Pago", yaxis_title="Ventas Netas")
         st.plotly_chart(fig, use_container_width=True)
-        
+
+st.caption("UNIVALLE - ASIGNATURA BASES DE DATOS I 2025/II")
