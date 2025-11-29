@@ -4,32 +4,18 @@ import numpy as np
 import plotly.express as px
 from sqlalchemy import create_engine, text
 
-# ============================================================
-# CONFIGURACIÓN DE LA PÁGINA
-# ============================================================
 st.set_page_config(
     page_title="Dashboard de Ventas",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Cadena por defecto (puedes modificarla aquí)
-# DEFAULT_DB_URI = "mysql+pymysql://root@localhost:3306/VENTAS"
 DEFAULT_DB_URI = "mysql+pymysql://sql5809370:ljmKmE64CM@sql5.freesqldatabase.com:3306/sql5809370"
-#Host: sql5.freesqldatabase.com
-#Database name: sql5809370
-#Database user: sql5809370
-#Database password: ljmKmE64CM
-#Port number: 3306
 
-# ============================================================
-# FUNCIÓN DE CONEXIÓN (SIN CACHE → evita error de pickling)
-# ============================================================
 def get_engine(db_uri):
     """Crea un engine SQLAlchemy sin cachearlo (para evitar errores de pickling)."""
     try:
         engine = create_engine(db_uri)
-        # Probar la conexión
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         return engine
@@ -37,9 +23,6 @@ def get_engine(db_uri):
         st.error(f"❌ Error conectando a la base de datos:\n{e}")
         return None
 
-# ============================================================
-# CARGA DE DATOS (SÍ cacheado → resultado en DataFrame)
-# ============================================================
 @st.cache_data(ttl=600)
 def load_data(db_uri):
     """Carga datos desde la base de datos y los procesa."""
@@ -53,31 +36,25 @@ def load_data(db_uri):
             c.descuento,
             (c.monto - c.descuento) AS monto_neto,
 
-            -- Producto
             p.id_producto,
             p.codigo_producto,
             p.descripcion,
             p.color,
 
-            -- Fábrica
             f.pais AS pais_fabrica,
             f.nombre AS nombre_fabrica,
 
-            -- Sucursal (a través de sucursal_producto)
             s.id_sucursal,
             s.numero_sucursal,
             s.ciudad AS ciudad_sucursal,
 
-            -- Cliente
             cl.id_cliente,
             CONCAT(cl.nombre_cliente, ' ', cl.apellido_paterno, ' ', cl.apellido_materno) AS nombre_cliente,
             cl.codigo_cliente,
             cl.ci,
 
-            -- Ciudad del cliente
             dc.ciudad AS ciudad_cliente,
 
-            -- Tipo de pago (derivado de las tablas de pago)
             CASE 
                 WHEN tpq.id_pago_qr IS NOT NULL THEN 'QR'
                 WHEN tpt.id_pago_tarjeta IS NOT NULL THEN 'TARJETA'
@@ -111,20 +88,17 @@ def load_data(db_uri):
 
     df = pd.read_sql(query, engine)
 
-    # Conversión de tipos
     df['fecha_compra'] = pd.to_datetime(df['fecha_compra'])
 
     df['descuento'] = df['descuento'].fillna(0).astype(float)
     df['monto'] = df['monto'].astype(float)
     df['monto_neto'] = df['monto'] - df['descuento']
 
-    # Columnas derivadas de fecha
     df['anio'] = df['fecha_compra'].dt.year
     df['mes'] = df['fecha_compra'].dt.month
     df['dia'] = df['fecha_compra'].dt.day
-    df['mes_anio'] = df['fecha_compra'].dt.to_period('M').astype(str)  # ej: 2025-03
+    df['mes_anio'] = df['fecha_compra'].dt.to_period('M').astype(str)
 
-    # Limpieza básica de texto / nulos
     df['pais_fabrica'] = df['pais_fabrica'].fillna('Sin país')
     df['ciudad_cliente'] = df['ciudad_cliente'].fillna('Sin ciudad')
     df['ciudad_sucursal'] = df['ciudad_sucursal'].fillna('Sin sucursal')
@@ -132,19 +106,15 @@ def load_data(db_uri):
 
     return df
 
-
-### FUNCIONES DE FILTRADO ###
 def filtrar(df, fechas, productos, ciudades, colores):
     """Filtra el DataFrame según los criterios seleccionados."""
-    if isinstance(fechas, (list,tuple)):
-        if len(fechas)==2:
-            fi,ff= fechas
-        elif len(fechas)==1:
-            fi,ff= fechas[0]
-        else:
-            fi=ff=df['fecha_compra'].min().date()
+    if isinstance(fechas, (list, tuple)) and len(fechas) == 2:
+        fi, ff = fechas[0], fechas[1]
+    elif isinstance(fechas, (list, tuple)) and len(fechas) == 1:
+        fi = ff = fechas[0]
     else:
-        fi=ff=fechas
+        fi = df['fecha_compra'].min().date()
+        ff = df['fecha_compra'].max().date()
     
     df = df[df['fecha_compra'].dt.date.between(fi, ff)]
 
@@ -155,27 +125,16 @@ def filtrar(df, fechas, productos, ciudades, colores):
     if colores:
         df = df[df['color'].isin(colores)]
     return df
-# ============================================================
-# ======================= INTERFAZ ============================
-# ============================================================
 
 st.title("📊 Dashboard de Ventas")
 
-# ============================================================
-# Sidebar – cadena de conexión
-# ============================================================
+db_uri = DEFAULT_DB_URI
 
-db_uri =  DEFAULT_DB_URI
-
-engine= get_engine(db_uri)  # Probar conexión al cargar la app
-
+engine = get_engine(db_uri)
 
 if engine is None:
     st.stop()
 
-# ============================================================
-# Cargar datos
-# ============================================================
 df = load_data(db_uri)
 
 if df.empty:
@@ -191,8 +150,7 @@ fechas = st.sidebar.date_input("Rango de fechas",
                                [fecha_min, fecha_max], 
                                min_value=fecha_min, max_value=fecha_max)
 
-productos= st.sidebar.multiselect("Productos",df['descripcion'].unique().tolist())
-# combo de ciudades
+productos = st.sidebar.multiselect("Productos", df['descripcion'].unique().tolist())
 ciudades = st.sidebar.multiselect("Ciudades", df['ciudad_cliente'].unique().tolist())
 
 colores = st.sidebar.multiselect("Colores", df['color'].unique().tolist())
@@ -203,17 +161,14 @@ if df_filtrado.empty:
     st.warning("No se encontraron resultados.")
     st.stop()
 
-# ============================================================
-# Visualización
-# ============================================================
 st.subheader(" INDICADORES")
 
-k1,k2,k3,k4= st.columns(4)
+k1,k2,k3,k4 = st.columns(4)
 k1.metric("Total Ventas", f"${df_filtrado['monto_neto'].sum():,.2f}")
 k2.metric("Número de Compras", len(df_filtrado))
 k3.metric("Ventas promedio", f"${df_filtrado['monto_neto'].mean():,.2f}")
 if not df_filtrado.empty:
-    prod_top=(
+    prod_top = (
         df_filtrado
         .groupby('descripcion')['monto_neto']
         .sum()
@@ -221,7 +176,7 @@ if not df_filtrado.empty:
         .index[0]
     )
 else:
-    prod_top="N/A"
+    prod_top = "N/A"
     
 k4.metric("Top Productos mas vendidos", prod_top)
 
@@ -251,7 +206,7 @@ with tab_tiempo:
     col_t1, col_t2 = st.columns(2)
     with col_t1:
         st.markdown("### Ventas netas en el tiempo")
-        df_ts=(
+        df_ts = (
             df_filtrado
             .groupby('fecha_compra', as_index=False)['monto_neto']
             .sum()
@@ -260,24 +215,23 @@ with tab_tiempo:
         with st.expander("📊 DATOS"):
             st.dataframe(df_ts, use_container_width=True)
         with st.expander("📊 Ver gráfico"):
-            fig = px.line(df_ts, x='fecha_compra', y='monto_neto', title='Ventas promedio por mes')
+            fig = px.line(df_ts, x='fecha_compra', y='monto_neto', title='Ventas por fecha de compra')
             st.plotly_chart(fig, use_container_width=True)
     with col_t2:
         st.markdown("### Distribucion de montos Netos por compra")
         with st.expander("📊 Ver gráfico"):
-            fig=px.histogram(df_filtrado, 
-                            x='monto_neto', 
-                            nbins=20,
-                            title='Distribución de montos netos por compra')
-            fig.update_layout(xaxis_title="Montos Neto por Compra", yaxis_title="Fecuencias")
+            fig = px.histogram(df_filtrado, 
+                               x='monto_neto', 
+                               nbins=20,
+                               title='Distribución de montos netos por compra')
+            fig.update_layout(xaxis_title="Monto Neto por Compra", yaxis_title="Frecuencias")
             st.plotly_chart(fig, use_container_width=True)
 
 with tab_productos:
-
     col1_prod, col2_prod = st.columns(2)
     with col1_prod:
-        st.subheader("Productos/Clientes")
-        df_prod=(
+        st.subheader("Top 10 Ventas por Producto")
+        df_prod = (
             df_filtrado
             .groupby('descripcion', as_index=False)['monto_neto']
             .sum()
@@ -285,15 +239,15 @@ with tab_productos:
             .head(10)
         )
         fig = px.bar(df_prod, 
-                    x='descripcion', 
-                    y='monto_neto', 
-                    title='Ventas netas por producto')
+                     x='descripcion', 
+                     y='monto_neto', 
+                     title='Ventas netas por producto')
         fig.update_layout(xaxis_title="Producto", yaxis_title="Ventas Netas")
         fig.update_traces(textposition='outside')
         st.plotly_chart(fig, use_container_width=True)
     with col2_prod:
-        st.markdown("### Diagrama de Cajas montos netos por producto")
-        top_productos=(
+        st.subheader("Distribución de Montos por Producto (Diagrama de Cajas)")
+        top_productos = (
             df_filtrado
             .groupby('descripcion')['monto_neto']
             .sum()
@@ -301,12 +255,12 @@ with tab_productos:
             .head(10)
             .index
         )
-        df_box= df_filtrado[df_filtrado['descripcion'].isin(top_productos)]
+        df_box = df_filtrado[df_filtrado['descripcion'].isin(top_productos)]
         fig = px.box(df_box, 
-                    x='descripcion', 
-                    y='monto_neto', 
-                    title='Ventas netas por producto')
-        fig.update_layout(xaxis_title="Producto", yaxis_title="Ventas Netas")
+                     x='descripcion', 
+                     y='monto_neto', 
+                     title='Distribución de Montos (Top 10 Productos)')
+        fig.update_layout(xaxis_title="Producto", yaxis_title="Monto Neto")
         st.plotly_chart(fig, use_container_width=True)
 
 
@@ -314,79 +268,70 @@ with tab_geograf:
     st.subheader("Geografía")
     col_g1, col_g2 = st.columns(2)
     with col_g1:
-        st.markdown("### Ventas por ciudad")
-        df_city=(
+        st.markdown("### Top 10 Ventas por Ciudad del Cliente")
+        df_city = (
             df_filtrado
             .groupby('ciudad_cliente', as_index=False)['monto_neto']
             .sum()
             .sort_values('monto_neto', ascending=False)
-            .head(10)
+            .head(10) 
         )
         fig = px.bar(df_city, 
-                    x='ciudad_cliente', 
-                    y='monto_neto', 
-                    title='Ventas netas por ciudad')
-        fig.update_layout(xaxis_title="Ciudad", yaxis_title="Ventas Netas")
+                     x='ciudad_cliente', 
+                     y='monto_neto', 
+                     title='Ventas netas por ciudad')
+        fig.update_layout(xaxis_title="Ciudad del Cliente", yaxis_title="Ventas Netas")
         fig.update_traces(textposition='outside')
         st.plotly_chart(fig, use_container_width=True)
     with col_g2:
-        st.markdown("### Ventas por país de fábrica")
-        df_tree_agg= df_filtrado.copy()
-        df_tree_agg=(
+        st.markdown("### Jerarquía de Ventas (País Fábrica > Ciudad Cliente > Producto)")
+        df_tree_agg = df_filtrado.copy()
+        df_tree_agg = (
             df_tree_agg
-            .groupby([ 'ciudad_cliente', 'descripcion'], as_index=False)['monto_neto']
+            .groupby(['pais_fabrica', 'ciudad_cliente', 'descripcion'], as_index=False)['monto_neto']
             .sum()
         )
         fig = px.treemap(df_tree_agg, 
-                        path=['ciudad_cliente', 'descripcion'], 
-                        values='monto_neto', 
-                        title='Ventas netas por país de fabrica')
-        fig.update_layout(xaxis_title ="País", yaxis_title="Ventas Netas")        
+                         path=['pais_fabrica', 'ciudad_cliente', 'descripcion'], 
+                         values='monto_neto', 
+                         title='Ventas netas por País de Fábrica, Ciudad y Producto')
+        fig.update_layout(margin=dict(t=50, l=25, r=25, b=25))
         st.plotly_chart(fig, use_container_width=True)
 
-
-
 with tab_tipo_pago: 
-st.subheader("Métodos de Pago")
-    col_tp, col_tp2 = st.columns(2)
-    with col_tp:
-        st.markdown("### Ventas netas por tipo de pago")
-        df_mb=(
-            df_filtrado
-            .groupby(['mes_anio','tipo_pago'], as_index=False)['monto_neto']
-            .sum()
-            .sort_values('mes_anio', ascending=False)
-
-        )
-
-        fig = px.bar(df_mb, 
-                    x='mes_anio', 
-                    y='monto_neto', 
-                    color='tipo_pago', 
-                    barmode='group',
-                    title='Ventas netas por tipo de pago')
-        fig.update_layout(xaxis_title="Mes", yaxis_title="Ventas Netas")
-        st.plotly_chart(fig, use_container_width=True)
-       
-   with tab_geograf:
-    st.subheader("Geografía")
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        st.markdown("### Top 10 Ventas por Ciudad del Cliente")
-        # ... (resto del código de col_g1) ...
-    with col_g2:
-        st.markdown("### Jerarquía de Ventas (País Fábrica > Ciudad Cliente > Producto)")
-        # ... (resto del código de col_g2) ...
-
-with tab_tipo_pago: 
-    # <<-- ¡CORRECCIÓN APLICADA AQUÍ!
     st.subheader("Métodos de Pago")
     col_tp, col_tp2 = st.columns(2)
     with col_tp:
         st.markdown("### Ventas netas por tipo de pago (a lo largo del tiempo)")
-        # ... (resto del código de col_tp) ...
+        df_mb = (
+            df_filtrado
+            .groupby(['mes_anio','tipo_pago'], as_index=False)['monto_neto']
+            .sum()
+            .sort_values('mes_anio', ascending=True) 
+        )
+
+        fig = px.bar(df_mb, 
+                     x='mes_anio', 
+                     y='monto_neto', 
+                     color='tipo_pago', 
+                     barmode='group',
+                     title='Ventas netas por tipo de pago (Mensual)')
+        fig.update_layout(xaxis_title="Mes", yaxis_title="Ventas Netas")
+        st.plotly_chart(fig, use_container_width=True)
+        
     with col_tp2:
         st.markdown("### Distribución Porcentual de Ventas por Tipo de Pago")
-        # ... (resto del código de col_tp2) ...
+        df_pie = (
+            df_filtrado
+            .groupby('tipo_pago', as_index=False)['monto_neto']
+            .sum()
+            .sort_values('monto_neto', ascending=False)
+        )
+        fig = px.pie(df_pie, 
+                     values='monto_neto', 
+                     names='tipo_pago', 
+                     title='Ventas netas por tipo de pago')
+        fig.update_layout(xaxis_title="Tipo de Pago", yaxis_title="Ventas Netas")
+        st.plotly_chart(fig, use_container_width=True)
 
-st.caption("UNIVALLE - ASIGNATURA BASES DE DATOS I 2025/II")
+st.caption("UNIVALLE - ASIGNATURA BASES DE DATOS I 2025")
