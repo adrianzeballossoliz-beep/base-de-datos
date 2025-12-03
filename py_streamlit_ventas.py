@@ -18,6 +18,7 @@ st.markdown("""
 
 /* Fondo general beige café */
 
+
 .stApp {
 
     background-color: #e8d9c4 !important;
