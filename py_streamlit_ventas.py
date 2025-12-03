@@ -1,337 +1,599 @@
 import streamlit as st
+
 import pandas as pd
-import numpy as np
+
 import plotly.express as px
+
 from sqlalchemy import create_engine, text
 
-st.set_page_config(
-    page_title="Dashboard de Ventas",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
-DEFAULT_DB_URI = "mysql+pymysql://sql5809370:ljmKmE64CM@sql5.freesqldatabase.com:3306/sql5809370"
 
-def get_engine(db_uri):
-    """Crea un engine SQLAlchemy sin cachearlo (para evitar errores de pickling)."""
+st.set_page_config(page_title="Hotel – Dashboard General", layout="wide")
+
+
+
+st.markdown("""
+
+<style>
+
+/* Fondo general beige café */
+
+.stApp {
+
+    background-color: #e8d9c4 !important;
+
+}
+
+
+
+/* Contenido principal: texto oscuro */
+
+.block-container {
+
+    color: #2b1a0f !important;
+
+}
+
+h1, h2, h3, h4, h5, h6, p, span, label {
+
+    color: #2b1a0f !important;
+
+}
+
+
+
+/* Sidebar café con letras blancas */
+
+[data-testid="stSidebar"] {
+
+    background-color: #7b4a26 !important;
+
+}
+
+[data-testid="stSidebar"] * {
+
+    color: #ffffff !important;
+
+}
+
+
+
+/* Barra superior (deploy / rerun) en blanco */
+
+[data-testid="stHeader"] * {
+
+    color: #ffffff !important;
+
+}
+
+
+
+/* Métricas – tarjetas café, todo en blanco */
+
+[data-testid="stMetric"] {
+
+    background: linear-gradient(135deg, #5c371c, #7b4a26);
+
+    padding: 12px;
+
+    border-radius: 10px;
+
+    border: 1px solid #3e2723;
+
+}
+
+[data-testid="stMetric"] * {
+
+    color: #ffffff !important;
+
+}
+
+
+
+/* Expanders – “botoncitos” */
+
+details {
+
+    background-color: #d1b792 !important;
+
+    border-radius: 8px;
+
+    padding: 0.4rem 0.7rem;
+
+    border: 1px solid #8d6e63;
+
+}
+
+summary {
+
+    font-weight: 700 !important;
+
+    color: #2b1a0f !important;
+
+}
+
+
+
+/* Tablas */
+
+[data-testid="stDataFrame"] {
+
+    color: #2b1a0f !important;
+
+}
+
+</style>
+
+""", unsafe_allow_html=True)
+
+
+
+WOOD_COLORS = ["#4b2e1a", "#6d4c3d", "#8d6e63", "#a1887f", "#3e2723"]
+
+px.defaults.color_discrete_sequence = WOOD_COLORS
+
+
+
+
+
+def style_fig(fig):
+
+    """Aplica fondo beige–café y letras oscuras a los gráficos."""
+
+    fig.update_layout(
+
+        paper_bgcolor="#c7ab85",
+
+        plot_bgcolor="#e1c39b",
+
+        font_color="#1c130d",
+
+        title_font_color="#1c130d",
+
+        xaxis=dict(title_font_color="#1c130d", tickfont=dict(color="#1c130d")),
+
+        yaxis=dict(title_font_color="#1c130d", tickfont=dict(color="#1c130d")),
+
+    )
+
+    return fig
+
+
+
+DB_URI = "mysql+pymysql://root@localhost:3306/proyecto"
+
+
+
+
+
+def get_engine(db_uri: str = DB_URI):
+
     try:
+
         engine = create_engine(db_uri)
+
         with engine.connect() as conn:
+
             conn.execute(text("SELECT 1"))
+
         return engine
+
     except Exception as e:
-        st.error(f"❌ Error conectando a la base de datos:\n{e}")
-        return None
+
+        st.error(f"Error conectando a la base de datos:\n{e}")
+
+        st.stop()
+
+
+
+
+
+engine = get_engine()
+
+
 
 @st.cache_data(ttl=600)
-def load_data(db_uri):
-    """Carga datos desde la base de datos y los procesa."""
-    engine = create_engine(db_uri)
+
+def load_data(db_uri: str):
+
+    engine_local = create_engine(db_uri)
 
     query = """
+
         SELECT 
-            c.id_compra,
-            c.fecha_compra,
-            c.monto,
-            c.descuento,
-            (c.monto - c.descuento) AS monto_neto,
 
-            p.id_producto,
-            p.codigo_producto,
-            p.descripcion,
-            p.color,
+            r.id_reserva,
 
-            f.pais AS pais_fabrica,
-            f.nombre AS nombre_fabrica,
+            r.fecha_reserva,
 
-            s.id_sucursal,
-            s.numero_sucursal,
-            s.ciudad AS ciudad_sucursal,
+            r.fecha_vencimiento,
 
-            cl.id_cliente,
-            CONCAT(cl.nombre_cliente, ' ', cl.apellido_paterno, ' ', cl.apellido_materno) AS nombre_cliente,
-            cl.codigo_cliente,
-            cl.ci,
+            r.monto_total,
 
-            dc.ciudad AS ciudad_cliente,
+            r.estado_reserva,
 
-            CASE 
-                WHEN tpq.id_pago_qr IS NOT NULL THEN 'QR'
-                WHEN tpt.id_pago_tarjeta IS NOT NULL THEN 'TARJETA'
-                WHEN tpe.id_pago_efectivo IS NOT NULL THEN 'EFECTIVO'
-                WHEN tptf.id_tipo_pago_transferencia IS NOT NULL THEN 'TRANSFERENCIA'
-                ELSE 'SIN_REGISTRO'
-            END AS tipo_pago
+            r.localizacion_reserva,
 
-        FROM compra c
-        LEFT JOIN producto p 
-            ON p.id_producto = c.id_producto
-        LEFT JOIN fabrica f
-            ON f.id_fabrica = p.id_fabrica
-        LEFT JOIN sucursal_producto sp
-            ON sp.id_producto = p.id_producto
-        LEFT JOIN sucursal s
-            ON s.id_sucursal = sp.id_sucursal
-        LEFT JOIN cliente cl 
-            ON cl.id_cliente = c.id_cliente
-        LEFT JOIN direccion_clientes dc 
-            ON dc.id_cliente = cl.id_cliente
-        LEFT JOIN tipo_pago_qr tpq
-            ON tpq.id_compra = c.id_compra
-        LEFT JOIN tipo_pago_tarjeta tpt
-            ON tpt.id_compra = c.id_compra
-        LEFT JOIN tipo_pago_efectivo tpe
-            ON tpe.id_compra = c.id_compra
-        LEFT JOIN tipo_pago_transferencia tptf
-            ON tptf.id_compra = c.id_compra;
+            
+
+            c.id_cliente,
+
+            CONCAT(c.nombre, ' ', c.apellido_paterno, ' ', c.apellido_materno) AS nombre_cliente,
+
+            c.ci,
+
+            
+
+            h.id_habitacion,
+
+            h.numero_habitacion,
+
+            h.piso,
+
+            h.precio AS tarifa_noche,
+
+            
+
+            th.id_tipo_habitacion,
+
+            th.tipo_cama,
+
+            th.numero_camas,
+
+            th.descripcion AS descripcion_tipo_habitacion,
+
+            th.capacidad,
+
+            
+
+            dr.id_detalle_reserva,
+
+            dr.cantidad_personas,
+
+            dr.check_in,
+
+            dr.check_out,
+
+            
+
+            se.id_servicios_especiales,
+
+            se.nombre AS nombre_servicio_especial,
+
+            se.precio AS precio_servicio_catalogo,
+
+            drs.precio_unitario AS precio_servicio_reserva,
+
+            
+
+            p.id_pago,
+
+            p.monto AS monto_pago,
+
+            p.estado_pago AS estado_pago_sistema,
+
+            p.fecha_pago,
+
+            
+
+            ep.nombre_estado_pago,
+
+            
+
+            dp.id_detalle_pago,
+
+            dp.monto AS monto_detalle_pago,
+
+            dp.fecha AS fecha_detalle_pago,
+
+            
+
+            mp.id_metodo_pago,
+
+            mp.nombre AS metodo_pago_nombre
+
+        FROM reserva r
+
+        JOIN cliente c 
+
+            ON c.id_cliente = r.id_cliente
+
+        JOIN detalle_reserva dr 
+
+            ON dr.id_reserva = r.id_reserva
+
+        JOIN habitacion h 
+
+            ON h.id_habitacion = dr.id_habitacion
+
+        JOIN tipo_habitacion th 
+
+            ON th.id_tipo_habitacion = h.id_tipo_habitacion
+
+        LEFT JOIN detalle_reserva_servicios_especiales drs
+
+            ON drs.id_detalle_reserva = dr.id_detalle_reserva
+
+        LEFT JOIN servicios_especiales se
+
+            ON se.id_servicios_especiales = drs.id_servicios_especiales
+
+        LEFT JOIN pago p
+
+            ON p.id_reserva = r.id_reserva
+
+        LEFT JOIN detalle_pago dp
+
+            ON dp.id_detalle_pago = p.id_detalle_pago
+
+        LEFT JOIN metodo_pago mp
+
+            ON mp.id_metodo_pago = dp.id_metodo_pago
+
+        LEFT JOIN estado_pago ep
+
+            ON ep.id_estado_pago = p.id_estado_pago;
+
     """
 
-    df = pd.read_sql(query, engine)
+    df_local = pd.read_sql(query, engine_local)
 
-    df['fecha_compra'] = pd.to_datetime(df['fecha_compra'])
 
-    df['descuento'] = df['descuento'].fillna(0).astype(float)
-    df['monto'] = df['monto'].astype(float)
-    df['monto_neto'] = df['monto'] - df['descuento']
 
-    df['anio'] = df['fecha_compra'].dt.year
-    df['mes'] = df['fecha_compra'].dt.month
-    df['dia'] = df['fecha_compra'].dt.day
-    df['mes_anio'] = df['fecha_compra'].dt.to_period('M').astype(str)
+    df_local["fecha_reserva"] = pd.to_datetime(df_local["fecha_reserva"])
 
-    df['pais_fabrica'] = df['pais_fabrica'].fillna('Sin país')
-    df['ciudad_cliente'] = df['ciudad_cliente'].fillna('Sin ciudad')
-    df['ciudad_sucursal'] = df['ciudad_sucursal'].fillna('Sin sucursal')
-    df['tipo_pago'] = df['tipo_pago'].fillna('SIN_REGISTRO')
+    df_local["fecha_vencimiento"] = pd.to_datetime(df_local["fecha_vencimiento"])
 
-    return df
+    df_local["check_in"] = pd.to_datetime(df_local["check_in"])
 
-def filtrar(df, fechas, productos, ciudades, colores):
-    """Filtra el DataFrame según los criterios seleccionados."""
-    if isinstance(fechas, (list, tuple)) and len(fechas) == 2:
-        fi, ff = fechas[0], fechas[1]
-    elif isinstance(fechas, (list, tuple)) and len(fechas) == 1:
-        fi = ff = fechas[0]
-    else:
-        fi = df['fecha_compra'].min().date()
-        ff = df['fecha_compra'].max().date()
-    
-    df = df[df['fecha_compra'].dt.date.between(fi, ff)]
+    df_local["check_out"] = pd.to_datetime(df_local["check_out"])
 
-    if productos:
-        df = df[df['descripcion'].isin(productos)]
-    if ciudades:
-        df = df[df['ciudad_cliente'].isin(ciudades)]
-    if colores:
-        df = df[df['color'].isin(colores)]
-    return df
+    df_local["fecha_pago"] = pd.to_datetime(df_local["fecha_pago"])
 
-st.title("📊 Dashboard de Ventas")
+    df_local["fecha_detalle_pago"] = pd.to_datetime(df_local["fecha_detalle_pago"])
 
-db_uri = DEFAULT_DB_URI
 
-engine = get_engine(db_uri)
 
-if engine is None:
-    st.stop()
+    df_local["monto_total"] = df_local["monto_total"].astype(float)
 
-df = load_data(db_uri)
+    df_local["monto_pago"] = df_local["monto_pago"].astype(float)
+
+    df_local["monto_detalle_pago"] = df_local["monto_detalle_pago"].astype(float)
+
+    df_local["tarifa_noche"] = df_local["tarifa_noche"].astype(float)
+
+
+
+    df_local["anio"] = df_local["fecha_reserva"].dt.year
+
+    df_local["mes"] = df_local["fecha_reserva"].dt.month
+
+    df_local["dia"] = df_local["fecha_reserva"].dt.day
+
+    df_local["mes_anio"] = df_local["fecha_reserva"].dt.to_period("M").astype(str)
+
+
+
+    df_local["noches"] = (df_local["check_out"] - df_local["check_in"]).dt.days
+
+
+
+    df_local["localizacion_reserva"] = df_local["localizacion_reserva"].fillna("Sin localización")
+
+    df_local["descripcion_tipo_habitacion"] = df_local["descripcion_tipo_habitacion"].fillna("Sin descripción")
+
+    df_local["nombre_servicio_especial"] = df_local["nombre_servicio_especial"].fillna("Sin servicio")
+
+    df_local["metodo_pago_nombre"] = df_local["metodo_pago_nombre"].fillna("Sin método")
+
+    df_local["nombre_estado_pago"] = df_local["nombre_estado_pago"].fillna("Sin estado")
+
+
+
+    return df_local
+
+
+
+
+
+df = load_data(DB_URI)
+
+
 
 if df.empty:
-    st.warning("No se pudo cargar la información.")
+
+    st.warning("No se pudo cargar información desde la base de datos.")
+
     st.stop()
 
-st.sidebar.header("📊 DASHBOARD VENTAS")
+st.sidebar.header("Filtros generales")
 
-fecha_min = df['fecha_compra'].min().date()
-fecha_max = df['fecha_compra'].max().date()
 
-fechas = st.sidebar.date_input("Rango de fechas", 
-                               [fecha_min, fecha_max], 
-                               min_value=fecha_min, max_value=fecha_max)
 
-productos = st.sidebar.multiselect("Productos", df['descripcion'].unique().tolist())
-ciudades = st.sidebar.multiselect("Ciudades", df['ciudad_cliente'].unique().tolist())
+fecha_min = df["fecha_reserva"].min().date()
 
-colores = st.sidebar.multiselect("Colores", df['color'].unique().tolist())
+fecha_max = df["fecha_reserva"].max().date()
 
-df_filtrado = filtrar(df, fechas, productos, ciudades, colores)
+
+
+rango_fechas = st.sidebar.date_input(
+
+    "Rango de fechas de reserva",
+
+    [fecha_min, fecha_max],
+
+    min_value=fecha_min,
+
+    max_value=fecha_max
+
+)
+
+
+
+if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
+
+    fi, ff = rango_fechas
+
+else:
+
+    fi = ff = fecha_min
+
+
+
+localizaciones = st.sidebar.multiselect(
+
+    "Hotel / localización",
+
+    sorted(df["localizacion_reserva"].unique().tolist())
+
+)
+
+
+
+estados_reserva = st.sidebar.multiselect(
+
+    "Estado de la reserva",
+
+    sorted(df["estado_reserva"].unique().tolist())
+
+)
+
+
+
+df_filtrado = df.copy()
+
+df_filtrado = df_filtrado[df_filtrado["fecha_reserva"].dt.date.between(fi, ff)]
+
+
+
+if localizaciones:
+
+    df_filtrado = df_filtrado[df_filtrado["localizacion_reserva"].isin(localizaciones)]
+
+
+
+if estados_reserva:
+
+    df_filtrado = df_filtrado[df_filtrado["estado_reserva"].isin(estados_reserva)]
+
+
 
 if df_filtrado.empty:
-    st.warning("No se encontraron resultados.")
+
+    st.warning("No se encontraron resultados con los filtros seleccionados.")
+
     st.stop()
 
-st.subheader(" INDICADORES")
 
-k1,k2,k3,k4 = st.columns(4)
-k1.metric("Total Ventas", f"${df_filtrado['monto_neto'].sum():,.2f}")
-k2.metric("Número de Compras", len(df_filtrado))
-k3.metric("Ventas promedio", f"${df_filtrado['monto_neto'].mean():,.2f}")
-if not df_filtrado.empty:
-    prod_top = (
-        df_filtrado
-        .groupby('descripcion')['monto_neto']
-        .sum()
-        .sort_values(ascending=False)
-        .index[0]
-    )
-else:
-    prod_top = "N/A"
-    
-k4.metric("Top Productos mas vendidos", prod_top)
 
-st.divider()
+st.title("Dashboard general de reservas")
 
-with st.expander("📊 DATOS FILTRADOS"):
-    st.dataframe(df_filtrado, use_container_width=True)
 
-    csv = df_filtrado.to_csv(index=False).encode('utf-8')
-    st.download_button("Descargar CSV", csv, "ventas.csv") 
 
-    st.divider()
+col1, col2, col3, col4 = st.columns(4)
+
+
+
+total_reservas = df_filtrado["id_reserva"].nunique()
+
+monto_total_reservas = df_filtrado.drop_duplicates("id_reserva")["monto_total"].sum()
+
+monto_promedio = monto_total_reservas / total_reservas if total_reservas > 0 else 0
+
+
+
+noches_totales = df_filtrado.drop_duplicates("id_reserva")["noches"].sum()
+
+
+
+col1.metric("Reservas únicas", total_reservas)
+
+col2.metric("Monto total reservas", f"${monto_total_reservas:,.2f}")
+
+col3.metric("Monto promedio por reserva", f"${monto_promedio:,.2f}")
+
+col4.metric("Noches reservadas (total)", int(noches_totales))
+
+
+
+st.markdown("---")
+
+
+
+st.subheader("Tabla de reservas filtradas")
+
+st.dataframe(df_filtrado, use_container_width=True)
+
+
+
+st.markdown("---")
+
+
 
 st.subheader("Visualizaciones")
 
-tab_tiempo, tab_productos, tab_geograf, tab_tipo_pago = st.tabs(
-    [
-        "Tiempo",
-        "Productos/Clientes",
-        "Geografía",
-        "Metodos de Pago"
-    ]
-)
-with tab_tiempo:
-    st.subheader("Tiempo")
-
-    col_t1, col_t2 = st.columns(2)
-    with col_t1:
-        st.markdown("### Ventas netas en el tiempo")
-        df_ts = (
-            df_filtrado
-            .groupby('fecha_compra', as_index=False)['monto_neto']
-            .sum()
-            .sort_values('fecha_compra')
-        )
-        with st.expander("📊 DATOS"):
-            st.dataframe(df_ts, use_container_width=True)
-        with st.expander("📊 Ver gráfico"):
-            fig = px.line(df_ts, x='fecha_compra', y='monto_neto', title='Ventas por fecha de compra')
-            st.plotly_chart(fig, use_container_width=True)
-    with col_t2:
-        st.markdown("### Distribucion de montos Netos por compra")
-        with st.expander("📊 Ver gráfico"):
-            fig = px.histogram(df_filtrado, 
-                               x='monto_neto', 
-                               nbins=20,
-                               title='Distribución de montos netos por compra')
-            fig.update_layout(xaxis_title="Monto Neto por Compra", yaxis_title="Frecuencias")
-            st.plotly_chart(fig, use_container_width=True)
-
-with tab_productos:
-    col1_prod, col2_prod = st.columns(2)
-    with col1_prod:
-        st.subheader("Top 10 Ventas por Producto")
-        df_prod = (
-            df_filtrado
-            .groupby('descripcion', as_index=False)['monto_neto']
-            .sum()
-            .sort_values('monto_neto', ascending=False)
-            .head(10)
-        )
-        fig = px.bar(df_prod, 
-                     x='descripcion', 
-                     y='monto_neto', 
-                     title='Ventas netas por producto')
-        fig.update_layout(xaxis_title="Producto", yaxis_title="Ventas Netas")
-        fig.update_traces(textposition='outside')
-        st.plotly_chart(fig, use_container_width=True)
-    with col2_prod:
-        st.subheader("Distribución de Montos por Producto (Diagrama de Cajas)")
-        top_productos = (
-            df_filtrado
-            .groupby('descripcion')['monto_neto']
-            .sum()
-            .sort_values(ascending=False)
-            .head(10)
-            .index
-        )
-        df_box = df_filtrado[df_filtrado['descripcion'].isin(top_productos)]
-        fig = px.box(df_box, 
-                     x='descripcion', 
-                     y='monto_neto', 
-                     title='Distribución de Montos (Top 10 Productos)')
-        fig.update_layout(xaxis_title="Producto", yaxis_title="Monto Neto")
-        st.plotly_chart(fig, use_container_width=True)
 
 
-with tab_geograf:
-    st.subheader("Geografía")
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        st.markdown("### Top 10 Ventas por Ciudad del Cliente")
-        df_city = (
-            df_filtrado
-            .groupby('ciudad_cliente', as_index=False)['monto_neto']
-            .sum()
-            .sort_values('monto_neto', ascending=False)
-            .head(10) 
-        )
-        fig = px.bar(df_city, 
-                     x='ciudad_cliente', 
-                     y='monto_neto', 
-                     title='Ventas netas por ciudad')
-        fig.update_layout(xaxis_title="Ciudad del Cliente", yaxis_title="Ventas Netas")
-        fig.update_traces(textposition='outside')
-        st.plotly_chart(fig, use_container_width=True)
-    with col_g2:
-        st.markdown("### Jerarquía de Ventas (País Fábrica > Ciudad Cliente > Producto)")
-        df_tree_agg = df_filtrado.copy()
-        df_tree_agg = (
-            df_tree_agg
-            .groupby(['pais_fabrica', 'ciudad_cliente', 'descripcion'], as_index=False)['monto_neto']
-            .sum()
-        )
-        fig = px.treemap(df_tree_agg, 
-                         path=['pais_fabrica', 'ciudad_cliente', 'descripcion'], 
-                         values='monto_neto', 
-                         title='Ventas netas por País de Fábrica, Ciudad y Producto')
-        fig.update_layout(margin=dict(t=50, l=25, r=25, b=25))
-        st.plotly_chart(fig, use_container_width=True)
+with st.expander("📊 Monto total de reservas por fecha"):
 
-with tab_tipo_pago: 
-    st.subheader("Métodos de Pago")
-    col_tp, col_tp2 = st.columns(2)
-    with col_tp:
-        st.markdown("### Ventas netas por tipo de pago (a lo largo del tiempo)")
-        df_mb = (
-            df_filtrado
-            .groupby(['mes_anio','tipo_pago'], as_index=False)['monto_neto']
-            .sum()
-            .sort_values('mes_anio', ascending=True) 
-        )
+    df_ts = (
 
-        fig = px.bar(df_mb, 
-                     x='mes_anio', 
-                     y='monto_neto', 
-                     color='tipo_pago', 
-                     barmode='group',
-                     title='Ventas netas por tipo de pago (Mensual)')
-        fig.update_layout(xaxis_title="Mes", yaxis_title="Ventas Netas")
-        st.plotly_chart(fig, use_container_width=True)
-        
-    with col_tp2:
-        st.markdown("### Distribución Porcentual de Ventas por Tipo de Pago")
-        df_pie = (
-            df_filtrado
-            .groupby('tipo_pago', as_index=False)['monto_neto']
-            .sum()
-            .sort_values('monto_neto', ascending=False)
-        )
-        fig = px.pie(df_pie, 
-                     values='monto_neto', 
-                     names='tipo_pago', 
-                     title='Ventas netas por tipo de pago')
-        fig.update_layout(xaxis_title="Tipo de Pago", yaxis_title="Ventas Netas")
-        st.plotly_chart(fig, use_container_width=True)
+        df_filtrado
 
-st.caption("UNIVALLE - ASIGNATURA BASES DE DATOS I 202m")
+        .drop_duplicates("id_reserva")
+
+        .groupby("fecha_reserva", as_index=False)["monto_total"]
+
+        .sum()
+
+        .sort_values("fecha_reserva")
+
+    )
+
+    fig1 = px.line(df_ts, x="fecha_reserva", y="monto_total",
+
+                   title="Monto total de reservas por fecha")
+
+    st.plotly_chart(style_fig(fig1), use_container_width=True)
+
+
+
+with st.expander("📊 Monto total por estado de reserva"):
+
+    df_estado = (
+
+        df_filtrado
+
+        .drop_duplicates("id_reserva")
+
+        .groupby("estado_reserva", as_index=False)["monto_total"]
+
+        .sum()
+
+        .sort_values("monto_total", ascending=False)
+
+    )
+
+    fig2 = px.bar(df_estado, x="estado_reserva", y="monto_total",
+
+                  title="Monto total por estado de reserva")
+
+    st.plotly_chart(style_fig(fig2), use_container_width=True)
+
+
+
+with st.expander("📊 Distribución de montos de reserva"):
+
+    df_res = df_filtrado.drop_duplicates("id_reserva")
+
+    fig3 = px.histogram(df_res, x="monto_total", nbins=10,
+
+                        title="Distribución de montos de reserva")
+
+    fig3.update_layout(xaxis_title="Monto total de reserva", yaxis_title="Frecuencia")
+
+    st.plotly_chart(style_fig(fig3), use_container_width=True)
+
+
+
+st.caption("UNIVALLE – Bases de Datos I – Proyecto Hotel") 
