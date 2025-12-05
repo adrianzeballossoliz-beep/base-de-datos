@@ -388,4 +388,4 @@ with tab_tipo_pago:
         fig.update_layout(xaxis_title="Tipo de Pago", yaxis_title="Ventas Netas")
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("UNIVALLE - ASIGNATURA BASES DE DATOS I 202m")
+st.caption("UNIVALLE - ASIGNATURA BASES DE DATOS I 202popom")
