@@ -4,18 +4,26 @@ import numpy as np
 import plotly.express as px
 from sqlalchemy import create_engine, text
 
+# ============================================================
+# CONFIGURACIÓN DE LA PÁGINA
+# ============================================================
 st.set_page_config(
     page_title="Dashboard de Ventas",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# Cadena por defecto (puedes modificarla aquí)
 DEFAULT_DB_URI = "mysql+pymysql://sql5809370:ljmKmE64CM@sql5.freesqldatabase.com:3306/sql5809370"
 
+# ============================================================
+# FUNCIÓN DE CONEXIÓN (SIN CACHE → evita error de pickling)
+# ============================================================
 def get_engine(db_uri):
     """Crea un engine SQLAlchemy sin cachearlo (para evitar errores de pickling)."""
     try:
         engine = create_engine(db_uri)
+        # Probar la conexión
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         return engine
@@ -23,6 +31,9 @@ def get_engine(db_uri):
         st.error(f"❌ Error conectando a la base de datos:\n{e}")
         return None
 
+# ============================================================
+# CARGA DE DATOS (SÍ cacheado → resultado en DataFrame)
+# ============================================================
 @st.cache_data(ttl=600)
 def load_data(db_uri):
     """Carga datos desde la base de datos y los procesa."""
@@ -36,25 +47,31 @@ def load_data(db_uri):
             c.descuento,
             (c.monto - c.descuento) AS monto_neto,
 
+            -- Producto
             p.id_producto,
             p.codigo_producto,
             p.descripcion,
             p.color,
 
+            -- Fábrica
             f.pais AS pais_fabrica,
             f.nombre AS nombre_fabrica,
 
+            -- Sucursal (a través de sucursal_producto)
             s.id_sucursal,
             s.numero_sucursal,
             s.ciudad AS ciudad_sucursal,
 
+            -- Cliente
             cl.id_cliente,
             CONCAT(cl.nombre_cliente, ' ', cl.apellido_paterno, ' ', cl.apellido_materno) AS nombre_cliente,
             cl.codigo_cliente,
             cl.ci,
 
+            -- Ciudad del cliente
             dc.ciudad AS ciudad_cliente,
 
+            -- Tipo de pago (derivado de las tablas de pago)
             CASE 
                 WHEN tpq.id_pago_qr IS NOT NULL THEN 'QR'
                 WHEN tpt.id_pago_tarjeta IS NOT NULL THEN 'TARJETA'
@@ -88,17 +105,21 @@ def load_data(db_uri):
     DB_URI = "mysql+pymysql://root@localhost:3307/proyecto"
     df = pd.read_sql(query, engine)
 
+    # Conversión de tipos
     df['fecha_compra'] = pd.to_datetime(df['fecha_compra'])
 
     df['descuento'] = df['descuento'].fillna(0).astype(float)
     df['monto'] = df['monto'].astype(float)
     df['monto_neto'] = df['monto'] - df['descuento']
 
+    # Columnas derivadas de fecha
     df['anio'] = df['fecha_compra'].dt.year
     df['mes'] = df['fecha_compra'].dt.month
     df['dia'] = df['fecha_compra'].dt.day
     df['mes_anio'] = df['fecha_compra'].dt.to_period('M').astype(str)
+    df['mes_anio'] = df['fecha_compra'].dt.to_period('M').astype(str)  # ej: 2025-03
 
+    # Limpieza básica de texto / nulos
     df['pais_fabrica'] = df['pais_fabrica'].fillna('Sin país')
     df['ciudad_cliente'] = df['ciudad_cliente'].fillna('Sin ciudad')
     df['ciudad_sucursal'] = df['ciudad_sucursal'].fillna('Sin sucursal')
@@ -106,17 +127,34 @@ def load_data(db_uri):
 
     return df
 
+
+### FUNCIONES DE FILTRADO ###
 def filtrar(df, fechas, productos, ciudades, colores):
     """Filtra el DataFrame según los criterios seleccionados."""
+    
+
+    
+    # Manejo de fechas
     if isinstance(fechas, (list, tuple)) and len(fechas) == 2:
         fi, ff = fechas[0], fechas[1]
     elif isinstance(fechas, (list, tuple)) and len(fechas) == 1:
         fi = ff = fechas[0]
     else:
+        if len(fechas) == 1:
+            fi, ff = fechas[0], fechas[1]
+        elif isinstance(fechas, (list, tuple)) and len(fechas) == 1:
+            fi = ff = fechas[0]
+
         fi = df['fecha_compra'].min().date()
         ff = df['fecha_compra'].max().date()
+
     
+    # Filtrar por rango de fechas
     df = df[df['fecha_compra'].dt.date.between(fi, ff)]
+    
+    # Aquí deberías continuar con el filtrado de productos, ciudades y colores
+    # ...
+    return df
 
     if productos:
         df = df[df['descripcion'].isin(productos)]
@@ -125,16 +163,27 @@ def filtrar(df, fechas, productos, ciudades, colores):
     if colores:
         df = df[df['color'].isin(colores)]
     return df
+# ============================================================
+# ======================= INTERFAZ ============================
+# ============================================================
 
 st.title("📊 Dashboard de Ventas")
+
+# ============================================================
+# Sidebar – cadena de conexión
+# ============================================================
 
 db_uri = DEFAULT_DB_URI
 
 engine = get_engine(db_uri)
 
+
 if engine is None:
     st.stop()
 
+# ============================================================
+# Cargar datos
+# ============================================================
 df = load_data(db_uri)
 
 if df.empty:
@@ -151,6 +200,7 @@ fechas = st.sidebar.date_input("Rango de fechas",
                                min_value=fecha_min, max_value=fecha_max)
 
 productos = st.sidebar.multiselect("Productos", df['descripcion'].unique().tolist())
+# combo de ciudades
 ciudades = st.sidebar.multiselect("Ciudades", df['ciudad_cliente'].unique().tolist())
 
 colores = st.sidebar.multiselect("Colores", df['color'].unique().tolist())
@@ -161,9 +211,13 @@ if df_filtrado.empty:
     st.warning("No se encontraron resultados.")
     st.stop()
 
+# ============================================================
+# Visualización
+# ============================================================
 st.subheader(" INDICADORES")
 
 k1,k2,k3,k4 = st.columns(4)
+
 k1.metric("Total Ventas", f"${df_filtrado['monto_neto'].sum():,.2f}")
 k2.metric("Número de Compras", len(df_filtrado))
 k3.metric("Ventas promedio", f"${df_filtrado['monto_neto'].mean():,.2f}")
