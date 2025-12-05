@@ -3,389 +3,566 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from sqlalchemy import create_engine, text
+from datetime import datetime, timedelta
 
 # ============================================================
 # CONFIGURACIÓN DE LA PÁGINA
 # ============================================================
 st.set_page_config(
-    page_title="Dashboard de Ventas",
+    page_title="Dashboard Hotelero",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Cadena por defecto (puedes modificarla aquí)
+# CADENA DE CONEXIÓN CORRECTA PARA TU MYSQL LOCAL
 DEFAULT_DB_URI = "mysql+pymysql://root:@localhost:3307/proyecto"
 
 # ============================================================
-# FUNCIÓN DE CONEXIÓN (SIN CACHE → evita error de pickling)
+# FUNCIÓN DE CONEXIÓN
 # ============================================================
 def get_engine(db_uri):
-    """Crea un engine SQLAlchemy sin cachearlo (para evitar errores de pickling)."""
+    """Crea un engine SQLAlchemy."""
     try:
         engine = create_engine(db_uri)
-        # Probar la conexión
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
+        st.success("✅ Conectado a la base de datos")
         return engine
     except Exception as e:
         st.error(f"❌ Error conectando a la base de datos:\n{e}")
         return None
 
 # ============================================================
-# CARGA DE DATOS (SÍ cacheado → resultado en DataFrame)
+# CARGA DE DATOS - ADAPTADA A TABLAS HOTELERAS
 # ============================================================
 @st.cache_data(ttl=600)
-def load_data(db_uri):
-    """Carga datos desde la base de datos y los procesa."""
+def load_hotel_data(db_uri):
+    """Carga datos desde la base de datos hotelera."""
     engine = create_engine(db_uri)
-
+    
+    # CONSULTA PRINCIPAL PARA EL HOTEL
     query = """
-        SELECT 
-            c.id_compra,
-            c.fecha_compra,
-            c.monto,
-            c.descuento,
-            (c.monto - c.descuento) AS monto_neto,
-
-            -- Producto
-            p.id_producto,
-            p.codigo_producto,
-            p.descripcion,
-            p.color,
-
-            -- Fábrica
-            f.pais AS pais_fabrica,
-            f.nombre AS nombre_fabrica,
-
-            -- Sucursal (a través de sucursal_producto)
-            s.id_sucursal,
-            s.numero_sucursal,
-            s.ciudad AS ciudad_sucursal,
-
-            -- Cliente
-            cl.id_cliente,
-            CONCAT(cl.nombre_cliente, ' ', cl.apellido_paterno, ' ', cl.apellido_materno) AS nombre_cliente,
-            cl.codigo_cliente,
-            cl.ci,
-
-            -- Ciudad del cliente
-            dc.ciudad AS ciudad_cliente,
-
-            -- Tipo de pago (derivado de las tablas de pago)
-            CASE 
-                WHEN tpq.id_pago_qr IS NOT NULL THEN 'QR'
-                WHEN tpt.id_pago_tarjeta IS NOT NULL THEN 'TARJETA'
-                WHEN tpe.id_pago_efectivo IS NOT NULL THEN 'EFECTIVO'
-                WHEN tptf.id_tipo_pago_transferencia IS NOT NULL THEN 'TRANSFERENCIA'
-                ELSE 'SIN_REGISTRO'
-            END AS tipo_pago
-
-        FROM compra c
-        LEFT JOIN producto p 
-            ON p.id_producto = c.id_producto
-        LEFT JOIN fabrica f
-            ON f.id_fabrica = p.id_fabrica
-        LEFT JOIN sucursal_producto sp
-            ON sp.id_producto = p.id_producto
-        LEFT JOIN sucursal s
-            ON s.id_sucursal = sp.id_sucursal
-        LEFT JOIN cliente cl 
-            ON cl.id_cliente = c.id_cliente
-        LEFT JOIN direccion_clientes dc 
-            ON dc.id_cliente = cl.id_cliente
-        LEFT JOIN tipo_pago_qr tpq
-            ON tpq.id_compra = c.id_compra
-        LEFT JOIN tipo_pago_tarjeta tpt
-            ON tpt.id_compra = c.id_compra
-        LEFT JOIN tipo_pago_efectivo tpe
-            ON tpe.id_compra = c.id_compra
-        LEFT JOIN tipo_pago_transferencia tptf
-            ON tptf.id_compra = c.id_compra;
+    SELECT 
+        -- Información de reserva
+        r.id_reserva,
+        r.fecha_reserva,
+        r.monto_total,
+        r.estado_reserva,
+        r.localizacion_reserva,
+        r.fecha_vencimiento,
+        
+        -- Información de cliente
+        c.id_cliente,
+        c.nombre,
+        c.apellido_paterno,
+        c.apellido_materno,
+        c.ci,
+        CONCAT(c.nombre, ' ', c.apellido_paterno, ' ', c.apellido_materno) AS nombre_completo,
+        
+        -- Información de detalle de reserva
+        dr.id_detalle_reserva,
+        dr.precio_unitario,
+        dr.cantidad_personas,
+        dr.check_in,
+        dr.check_out,
+        
+        -- Información de habitación
+        h.id_habitacion,
+        h.numero_habitacion,
+        h.piso,
+        h.precio AS precio_habitacion,
+        
+        -- Información de tipo de habitación
+        th.id_tipo_habitacion,
+        th.descripcion AS tipo_habitacion,
+        th.numero_camas,
+        th.capacidad,
+        th.tamano_m2,
+        
+        -- Información de servicios especiales
+        COALESCE(se.nombre, 'Sin servicio') AS servicio_especial,
+        COALESCE(se.precio, 0) AS precio_servicio,
+        
+        -- Información de pago
+        p.id_pago,
+        p.monto AS monto_pago,
+        p.estado_pago,
+        p.fecha_pago,
+        
+        -- Tipo de método de pago
+        CASE 
+            WHEN tar.id_tarjeta IS NOT NULL THEN 'TARJETA'
+            WHEN tr.id_transferencia IS NOT NULL THEN 'TRANSFERENCIA'
+            WHEN ef.id_efectivo IS NOT NULL THEN 'EFECTIVO'
+            WHEN q.id_qr IS NOT NULL THEN 'QR'
+            ELSE 'SIN_REGISTRO'
+        END AS metodo_pago,
+        
+        -- Información de promociones
+        pr.codigo_promocional,
+        pr.porcentaje_descuento
+        
+    FROM reserva r
+    LEFT JOIN cliente c ON r.id_cliente = c.id_cliente
+    LEFT JOIN detalle_reserva dr ON r.id_reserva = dr.id_reserva
+    LEFT JOIN habitacion h ON dr.id_habitacion = h.id_habitacion
+    LEFT JOIN tipo_habitacion th ON h.id_tipo_habitacion = th.id_tipo_habitacion
+    LEFT JOIN detalle_reserva_servicios_especiales drse ON dr.id_detalle_reserva = drse.id_detalle_reserva
+    LEFT JOIN servicios_especiales se ON drse.id_servicios_especiales = se.id_servicios_especiales
+    LEFT JOIN pago p ON r.id_reserva = p.id_reserva
+    LEFT JOIN tarjeta tar ON p.id_pago = tar.id_detalle_pago
+    LEFT JOIN transferencia tr ON p.id_pago = tr.id_detalle_pago
+    LEFT JOIN efectivo ef ON p.id_pago = ef.id_detalle_pago
+    LEFT JOIN qr q ON p.id_pago = q.id_detalle_pago
+    LEFT JOIN promocion pr ON p.id_pago = pr.id_promocion
+    ORDER BY r.fecha_reserva DESC
+    LIMIT 1000
     """
-    DB_URI = "mysql+pymysql://root@localhost:3307/proyecto"
-    df = pd.read_sql(query, engine)
-
-    # Conversión de tipos
-    df['fecha_compra'] = pd.to_datetime(df['fecha_compra'])
-
-    df['descuento'] = df['descuento'].fillna(0).astype(float)
-    df['monto'] = df['monto'].astype(float)
-    df['monto_neto'] = df['monto'] - df['descuento']
-
-    # Columnas derivadas de fecha
-    df['anio'] = df['fecha_compra'].dt.year
-    df['mes'] = df['fecha_compra'].dt.month
-    df['dia'] = df['fecha_compra'].dt.day
-    df['mes_anio'] = df['fecha_compra'].dt.to_period('M').astype(str)
-    df['mes_anio'] = df['fecha_compra'].dt.to_period('M').astype(str)  # ej: 2025-03
-
-    # Limpieza básica de texto / nulos
-    df['pais_fabrica'] = df['pais_fabrica'].fillna('Sin país')
-    df['ciudad_cliente'] = df['ciudad_cliente'].fillna('Sin ciudad')
-    df['ciudad_sucursal'] = df['ciudad_sucursal'].fillna('Sin sucursal')
-    df['tipo_pago'] = df['tipo_pago'].fillna('SIN_REGISTRO')
-
+    
+    try:
+        df = pd.read_sql(query, engine)
+    except Exception as e:
+        st.error(f"Error en la consulta: {e}")
+        return pd.DataFrame()
+    
+    # CONVERSIÓN DE FECHAS
+    date_columns = ['fecha_reserva', 'check_in', 'check_out', 'fecha_pago', 'fecha_vencimiento']
+    for col in date_columns:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors='coerce')
+    
+    # CALCULAR DURACIÓN DE ESTADÍA
+    if 'check_in' in df.columns and 'check_out' in df.columns:
+        df['duracion_estadia'] = (df['check_out'] - df['check_in']).dt.days
+        df['duracion_estadia'] = df['duracion_estadia'].fillna(0).astype(int)
+    
+    # COLUMNAS DERIVADAS DE FECHA
+    if 'fecha_reserva' in df.columns:
+        df['anio'] = df['fecha_reserva'].dt.year
+        df['mes'] = df['fecha_reserva'].dt.month
+        df['dia'] = df['fecha_reserva'].dt.day
+        df['mes_anio'] = df['fecha_reserva'].dt.to_period('M').astype(str)
+        df['dia_semana'] = df['fecha_reserva'].dt.day_name()
+    
+    # CALCULAR MONTO NETO (considerando descuentos)
+    if 'monto_total' in df.columns and 'porcentaje_descuento' in df.columns:
+        df['porcentaje_descuento'] = df['porcentaje_descuento'].fillna(0)
+        df['descuento'] = df['monto_total'] * (df['porcentaje_descuento'] / 100)
+        df['monto_neto'] = df['monto_total'] - df['descuento']
+    elif 'monto_total' in df.columns:
+        df['monto_neto'] = df['monto_total']
+    else:
+        df['monto_neto'] = 0
+    
+    # AGREGAR PRECIO SERVICIO SI EXISTE
+    if 'precio_servicio' in df.columns:
+        df['monto_neto'] = df['monto_neto'] + df['precio_servicio'].fillna(0)
+    
+    # LIMPIEZA DE VALORES NULOS
+    text_columns = ['estado_reserva', 'localizacion_reserva', 'nombre', 
+                   'tipo_habitacion', 'servicio_especial', 'estado_pago', 
+                   'metodo_pago', 'codigo_promocional']
+    
+    for col in text_columns:
+        if col in df.columns:
+            df[col] = df[col].fillna('Sin especificar')
+    
+    # VALORES NUMÉRICOS
+    numeric_columns = ['monto_total', 'monto_neto', 'precio_unitario', 
+                      'precio_habitacion', 'precio_servicio', 'cantidad_personas']
+    
+    for col in numeric_columns:
+        if col in df.columns:
+            df[col] = df[col].fillna(0).astype(float)
+    
     return df
 
-
-### FUNCIONES DE FILTRADO ###
-def filtrar(df, fechas, productos, ciudades, colores):
-    """Filtra el DataFrame según los criterios seleccionados."""
+# ============================================================
+# FUNCIÓN DE FILTRADO PARA HOTEL
+# ============================================================
+def filtrar_hotel(df, fechas, estados_reserva, tipos_habitacion, servicios, metodos_pago):
+    """Filtra reservas hoteleras según criterios."""
     
-
+    # Copiar DataFrame
+    df_filtrado = df.copy()
     
-    # Manejo de fechas
+    # FILTRAR POR FECHAS
     if isinstance(fechas, (list, tuple)) and len(fechas) == 2:
         fi, ff = fechas[0], fechas[1]
-    elif isinstance(fechas, (list, tuple)) and len(fechas) == 1:
-        fi = ff = fechas[0]
     else:
-        if len(fechas) == 1:
-            fi, ff = fechas[0], fechas[1]
-        elif isinstance(fechas, (list, tuple)) and len(fechas) == 1:
-            fi = ff = fechas[0]
-
-        fi = df['fecha_compra'].min().date()
-        ff = df['fecha_compra'].max().date()
-
+        if 'fecha_reserva' in df_filtrado.columns:
+            fi = df_filtrado['fecha_reserva'].min().date()
+            ff = df_filtrado['fecha_reserva'].max().date()
+        else:
+            fi = datetime.now().date() - timedelta(days=30)
+            ff = datetime.now().date()
     
-    # Filtrar por rango de fechas
-    df = df[df['fecha_compra'].dt.date.between(fi, ff)]
+    if 'fecha_reserva' in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado['fecha_reserva'].dt.date.between(fi, ff)]
     
-    # Aquí deberías continuar con el filtrado de productos, ciudades y colores
-    # ...
-    return df
+    # FILTRAR POR ESTADO DE RESERVA
+    if estados_reserva and 'estado_reserva' in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado['estado_reserva'].isin(estados_reserva)]
+    
+    # FILTRAR POR TIPO DE HABITACIÓN
+    if tipos_habitacion and 'tipo_habitacion' in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado['tipo_habitacion'].isin(tipos_habitacion)]
+    
+    # FILTRAR POR SERVICIOS ESPECIALES
+    if servicios and 'servicio_especial' in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado['servicio_especial'].isin(servicios)]
+    
+    # FILTRAR POR MÉTODO DE PAGO
+    if metodos_pago and 'metodo_pago' in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado['metodo_pago'].isin(metodos_pago)]
+    
+    return df_filtrado
 
-    if productos:
-        df = df[df['descripcion'].isin(productos)]
-    if ciudades:
-        df = df[df['ciudad_cliente'].isin(ciudades)]
-    if colores:
-        df = df[df['color'].isin(colores)]
-    return df
 # ============================================================
-# ======================= INTERFAZ ============================
+# INTERFAZ PRINCIPAL - HOTEL
 # ============================================================
+st.title("🏨 Dashboard de Gestión Hotelera")
 
-st.title("📊 Dashboard de Ventas")
-
-# ============================================================
-# Sidebar – cadena de conexión
-# ============================================================
-
-db_uri = DEFAULT_DB_URI
-
-engine = get_engine(db_uri)
-
-
+# CONEXIÓN
+engine = get_engine(DEFAULT_DB_URI)
 if engine is None:
     st.stop()
 
-# ============================================================
-# Cargar datos
-# ============================================================
-df = load_data(db_uri)
+# CARGA DE DATOS
+with st.spinner("🔄 Cargando datos del hotel..."):
+    df = load_hotel_data(DEFAULT_DB_URI)
 
 if df.empty:
-    st.warning("No se pudo cargar la información.")
-    st.stop()
-
-st.sidebar.header("📊 DASHBOARD VENTAS")
-
-fecha_min = df['fecha_compra'].min().date()
-fecha_max = df['fecha_compra'].max().date()
-
-fechas = st.sidebar.date_input("Rango de fechas", 
-                               [fecha_min, fecha_max], 
-                               min_value=fecha_min, max_value=fecha_max)
-
-productos = st.sidebar.multiselect("Productos", df['descripcion'].unique().tolist())
-# combo de ciudades
-ciudades = st.sidebar.multiselect("Ciudades", df['ciudad_cliente'].unique().tolist())
-
-colores = st.sidebar.multiselect("Colores", df['color'].unique().tolist())
-
-df_filtrado = filtrar(df, fechas, productos, ciudades, colores)
-
-if df_filtrado.empty:
-    st.warning("No se encontraron resultados.")
+    st.warning("⚠️ No se encontraron datos en la base de datos.")
+    st.info("""
+    **Posibles soluciones:**
+    1. Asegúrate de haber ejecutado el script SQL para crear las tablas
+    2. Verifica que haya datos en las tablas
+    3. Revisa la conexión a la base de datos
+    """)
     st.stop()
 
 # ============================================================
-# Visualización
+# SIDEBAR - FILTROS HOTELEROS
 # ============================================================
-st.subheader(" INDICADORES")
+st.sidebar.header("🔍 Filtros Hotelero")
 
-k1,k2,k3,k4 = st.columns(4)
-
-k1.metric("Total Ventas", f"${df_filtrado['monto_neto'].sum():,.2f}")
-k2.metric("Número de Compras", len(df_filtrado))
-k3.metric("Ventas promedio", f"${df_filtrado['monto_neto'].mean():,.2f}")
-if not df_filtrado.empty:
-    prod_top = (
-        df_filtrado
-        .groupby('descripcion')['monto_neto']
-        .sum()
-        .sort_values(ascending=False)
-        .index[0]
+# FECHAS
+if 'fecha_reserva' in df.columns:
+    fecha_min = df['fecha_reserva'].min().date()
+    fecha_max = df['fecha_reserva'].max().date()
+    fechas = st.sidebar.date_input(
+        "📅 Rango de fechas de reserva",
+        [fecha_min, fecha_max],
+        min_value=fecha_min,
+        max_value=fecha_max
     )
 else:
-    prod_top = "N/A"
-    
-k4.metric("Top Productos mas vendidos", prod_top)
+    fechas = st.sidebar.date_input(
+        "📅 Rango de fechas",
+        [datetime.now().date() - timedelta(days=30), datetime.now().date()]
+    )
+
+# ESTADOS DE RESERVA
+if 'estado_reserva' in df.columns:
+    estados_opciones = df['estado_reserva'].unique().tolist()
+    estados_reserva = st.sidebar.multiselect(
+        "📋 Estado de reserva",
+        estados_opciones,
+        default=['confirmada'] if 'confirmada' in estados_opciones else []
+    )
+else:
+    estados_reserva = []
+
+# TIPOS DE HABITACIÓN
+if 'tipo_habitacion' in df.columns:
+    tipos_habitacion = st.sidebar.multiselect(
+        "🛏️ Tipo de habitación",
+        df['tipo_habitacion'].unique().tolist()
+    )
+else:
+    tipos_habitacion = []
+
+# SERVICIOS ESPECIALES
+if 'servicio_especial' in df.columns:
+    servicios_opciones = df['servicio_especial'].unique().tolist()
+    servicios = st.sidebar.multiselect(
+        "⭐ Servicios especiales",
+        servicios_opciones
+    )
+else:
+    servicios = []
+
+# MÉTODOS DE PAGO
+if 'metodo_pago' in df.columns:
+    metodos_pago = st.sidebar.multiselect(
+        "💳 Método de pago",
+        df['metodo_pago'].unique().tolist()
+    )
+else:
+    metodos_pago = []
+
+# APLICAR FILTROS
+df_filtrado = filtrar_hotel(df, fechas, estados_reserva, tipos_habitacion, servicios, metodos_pago)
+
+if df_filtrado.empty:
+    st.warning("⚠️ No hay reservas que coincidan con los filtros seleccionados.")
+    st.stop()
+
+# ============================================================
+# KPI PRINCIPALES - HOTEL
+# ============================================================
+st.subheader("📊 Indicadores Clave (KPIs)")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    total_ventas = df_filtrado['monto_neto'].sum()
+    st.metric("💰 Ingresos Totales", f"${total_ventas:,.2f}")
+
+with col2:
+    num_reservas = df_filtrado['id_reserva'].nunique()
+    st.metric("📋 Reservas Totales", num_reservas)
+
+with col3:
+    if num_reservas > 0:
+        promedio_reserva = total_ventas / num_reservas
+    else:
+        promedio_reserva = 0
+    st.metric("📈 Reserva Promedio", f"${promedio_reserva:,.2f}")
+
+with col4:
+    if 'duracion_estadia' in df_filtrado.columns and len(df_filtrado) > 0:
+        estancia_promedio = df_filtrado['duracion_estadia'].mean()
+    else:
+        estancia_promedio = 0
+    st.metric("🏨 Estancia Promedio", f"{estancia_promedio:.1f} noches")
 
 st.divider()
 
-with st.expander("📊 DATOS FILTRADOS"):
-    st.dataframe(df_filtrado, use_container_width=True)
-
-    csv = df_filtrado.to_csv(index=False).encode('utf-8')
-    st.download_button("Descargar CSV", csv, "ventas.csv") 
-
-    st.divider()
-
-st.subheader("Visualizaciones")
-
-tab_tiempo, tab_productos, tab_geograf, tab_tipo_pago = st.tabs(
-    [
-        "Tiempo",
-        "Productos/Clientes",
-        "Geografía",
-        "Metodos de Pago"
-    ]
-)
-with tab_tiempo:
-    st.subheader("Tiempo")
-
-    col_t1, col_t2 = st.columns(2)
-    with col_t1:
-        st.markdown("### Ventas netas en el tiempo")
-        df_ts = (
-            df_filtrado
-            .groupby('fecha_compra', as_index=False)['monto_neto']
-            .sum()
-            .sort_values('fecha_compra')
-        )
-        with st.expander("📊 DATOS"):
-            st.dataframe(df_ts, use_container_width=True)
-        with st.expander("📊 Ver gráfico"):
-            fig = px.line(df_ts, x='fecha_compra', y='monto_neto', title='Ventas por fecha de compra')
-            st.plotly_chart(fig, use_container_width=True)
-    with col_t2:
-        st.markdown("### Distribucion de montos Netos por compra")
-        with st.expander("📊 Ver gráfico"):
-            fig = px.histogram(df_filtrado, 
-                               x='monto_neto', 
-                               nbins=20,
-                               title='Distribución de montos netos por compra')
-            fig.update_layout(xaxis_title="Monto Neto por Compra", yaxis_title="Frecuencias")
-            st.plotly_chart(fig, use_container_width=True)
-
-with tab_productos:
-    col1_prod, col2_prod = st.columns(2)
-    with col1_prod:
-        st.subheader("Top 10 Ventas por Producto")
-        df_prod = (
-            df_filtrado
-            .groupby('descripcion', as_index=False)['monto_neto']
-            .sum()
-            .sort_values('monto_neto', ascending=False)
-            .head(10)
-        )
-        fig = px.bar(df_prod, 
-                     x='descripcion', 
-                     y='monto_neto', 
-                     title='Ventas netas por producto')
-        fig.update_layout(xaxis_title="Producto", yaxis_title="Ventas Netas")
-        fig.update_traces(textposition='outside')
-        st.plotly_chart(fig, use_container_width=True)
-    with col2_prod:
-        st.subheader("Distribución de Montos por Producto (Diagrama de Cajas)")
-        top_productos = (
-            df_filtrado
-            .groupby('descripcion')['monto_neto']
-            .sum()
-            .sort_values(ascending=False)
-            .head(10)
-            .index
-        )
-        df_box = df_filtrado[df_filtrado['descripcion'].isin(top_productos)]
-        fig = px.box(df_box, 
-                     x='descripcion', 
-                     y='monto_neto', 
-                     title='Distribución de Montos (Top 10 Productos)')
-        fig.update_layout(xaxis_title="Producto", yaxis_title="Monto Neto")
-        st.plotly_chart(fig, use_container_width=True)
-
-
-with tab_geograf:
-    st.subheader("Geografía")
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        st.markdown("### Top 10 Ventas por Ciudad del Cliente")
-        df_city = (
-            df_filtrado
-            .groupby('ciudad_cliente', as_index=False)['monto_neto']
-            .sum()
-            .sort_values('monto_neto', ascending=False)
-            .head(10) 
-        )
-        fig = px.bar(df_city, 
-                     x='ciudad_cliente', 
-                     y='monto_neto', 
-                     title='Ventas netas por ciudad')
-        fig.update_layout(xaxis_title="Ciudad del Cliente", yaxis_title="Ventas Netas")
-        fig.update_traces(textposition='outside')
-        st.plotly_chart(fig, use_container_width=True)
-    with col_g2:
-        st.markdown("### Jerarquía de Ventas (País Fábrica > Ciudad Cliente > Producto)")
-        df_tree_agg = df_filtrado.copy()
-        df_tree_agg = (
-            df_tree_agg
-            .groupby(['pais_fabrica', 'ciudad_cliente', 'descripcion'], as_index=False)['monto_neto']
-            .sum()
-        )
-        fig = px.treemap(df_tree_agg, 
-                         path=['pais_fabrica', 'ciudad_cliente', 'descripcion'], 
-                         values='monto_neto', 
-                         title='Ventas netas por País de Fábrica, Ciudad y Producto')
-        fig.update_layout(margin=dict(t=50, l=25, r=25, b=25))
-        st.plotly_chart(fig, use_container_width=True)
-
-with tab_tipo_pago: 
-    st.subheader("Métodos de Pago")
-    col_tp, col_tp2 = st.columns(2)
-    with col_tp:
-        st.markdown("### Ventas netas por tipo de pago (a lo largo del tiempo)")
-        df_mb = (
-            df_filtrado
-            .groupby(['mes_anio','tipo_pago'], as_index=False)['monto_neto']
-            .sum()
-            .sort_values('mes_anio', ascending=True) 
-        )
-
-        fig = px.bar(df_mb, 
-                     x='mes_anio', 
-                     y='monto_neto', 
-                     color='tipo_pago', 
-                     barmode='group',
-                     title='Ventas netas por tipo de pago (Mensual)')
-        fig.update_layout(xaxis_title="Mes", yaxis_title="Ventas Netas")
-        st.plotly_chart(fig, use_container_width=True)
+# ============================================================
+# DATOS FILTRADOS
+# ============================================================
+with st.expander("📋 Ver Datos de Reservas", expanded=False):
+    columnas_mostrar = []
+    for col in ['id_reserva', 'fecha_reserva', 'nombre_completo', 'tipo_habitacion', 
+                'check_in', 'check_out', 'duracion_estadia', 'monto_neto', 
+                'estado_reserva', 'metodo_pago']:
+        if col in df_filtrado.columns:
+            columnas_mostrar.append(col)
+    
+    if columnas_mostrar:
+        st.dataframe(df_filtrado[columnas_mostrar], use_container_width=True, height=300)
         
-    with col_tp2:
-        st.markdown("### Distribución Porcentual de Ventas por Tipo de Pago")
-        df_pie = (
-            df_filtrado
-            .groupby('tipo_pago', as_index=False)['monto_neto']
-            .sum()
-            .sort_values('monto_neto', ascending=False)
+        # Botón descarga
+        csv = df_filtrado[columnas_mostrar].to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "📥 Descargar CSV",
+            csv,
+            "reservas_hotel.csv",
+            "text/csv"
         )
-        fig = px.pie(df_pie, 
-                     values='monto_neto', 
-                     names='tipo_pago', 
-                     title='Ventas netas por tipo de pago')
-        fig.update_layout(xaxis_title="Tipo de Pago", yaxis_title="Ventas Netas")
-        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("No hay columnas disponibles para mostrar")
 
-st.caption("UNIVALLE - ASIGNATURA BASES DE DATOS I 202popom")
+st.divider()
+
+# ============================================================
+# VISUALIZACIONES - HOTEL
+# ============================================================
+st.subheader("📈 Análisis Visual")
+
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📅 Tiempo", 
+    "🛏️ Habitaciones", 
+    "👥 Clientes", 
+    "💳 Pagos", 
+    "📊 General"
+])
+
+# TAB 1: ANÁLISIS TEMPORAL
+with tab1:
+    col_t1, col_t2 = st.columns(2)
+    
+    with col_t1:
+        if 'fecha_reserva' in df_filtrado.columns and 'monto_neto' in df_filtrado.columns:
+            st.markdown("### 📈 Ingresos Diarios")
+            ingresos_diarios = df_filtrado.groupby(
+                df_filtrado['fecha_reserva'].dt.date
+            )['monto_neto'].sum().reset_index()
+            
+            fig = px.line(
+                ingresos_diarios, 
+                x='fecha_reserva', 
+                y='monto_neto',
+                title='Evolución de Ingresos Diarios',
+                labels={'monto_neto': 'Ingresos ($)', 'fecha_reserva': 'Fecha'}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col_t2:
+        if 'mes_anio' in df_filtrado.columns and 'monto_neto' in df_filtrado.columns:
+            st.markdown("### 📊 Ingresos Mensuales")
+            ingresos_mensuales = df_filtrado.groupby('mes_anio')['monto_neto'].sum().reset_index()
+            
+            fig = px.bar(
+                ingresos_mensuales, 
+                x='mes_anio', 
+                y='monto_neto',
+                title='Ingresos por Mes',
+                labels={'monto_neto': 'Ingresos ($)', 'mes_anio': 'Mes'}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+# TAB 2: ANÁLISIS DE HABITACIONES
+with tab2:
+    col_h1, col_h2 = st.columns(2)
+    
+    with col_h1:
+        if 'tipo_habitacion' in df_filtrado.columns:
+            st.markdown("### 🛏️ Reservas por Tipo de Habitación")
+            reservas_por_tipo = df_filtrado['tipo_habitacion'].value_counts().reset_index()
+            reservas_por_tipo.columns = ['Tipo', 'Cantidad']
+            
+            fig = px.bar(
+                reservas_por_tipo,
+                x='Tipo',
+                y='Cantidad',
+                title='Distribución de Reservas por Tipo de Habitación',
+                color='Tipo'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col_h2:
+        if 'tipo_habitacion' in df_filtrado.columns and 'monto_neto' in df_filtrado.columns:
+            st.markdown("### 💰 Ingresos por Tipo de Habitación")
+            ingresos_por_tipo = df_filtrado.groupby('tipo_habitacion')['monto_neto'].sum().reset_index()
+            
+            fig = px.pie(
+                ingresos_por_tipo,
+                values='monto_neto',
+                names='tipo_habitacion',
+                title='Distribución de Ingresos por Tipo de Habitación'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+# TAB 3: ANÁLISIS DE CLIENTES
+with tab3:
+    col_c1, col_c2 = st.columns(2)
+    
+    with col_c1:
+        if 'nombre_completo' in df_filtrado.columns and 'monto_neto' in df_filtrado.columns:
+            st.markdown("### 👑 Top 10 Clientes por Consumo")
+            top_clientes = df_filtrado.groupby('nombre_completo')['monto_neto'].sum().reset_index()
+            top_clientes = top_clientes.sort_values('monto_neto', ascending=False).head(10)
+            
+            fig = px.bar(
+                top_clientes,
+                x='nombre_completo',
+                y='monto_neto',
+                title='Clientes con Mayor Consumo',
+                labels={'monto_neto': 'Consumo Total ($)', 'nombre_completo': 'Cliente'}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col_c2:
+        if 'duracion_estadia' in df_filtrado.columns:
+            st.markdown("### 📅 Distribución de Duración de Estadía")
+            fig = px.histogram(
+                df_filtrado,
+                x='duracion_estadia',
+                nbins=20,
+                title='Distribución de Noches por Reserva',
+                labels={'duracion_estadia': 'Noches de Estadía'}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+# TAB 4: ANÁLISIS DE PAGOS
+with tab4:
+    col_p1, col_p2 = st.columns(2)
+    
+    with col_p1:
+        if 'metodo_pago' in df_filtrado.columns:
+            st.markdown("### 💳 Métodos de Pago Más Usados")
+            metodos_count = df_filtrado['metodo_pago'].value_counts().reset_index()
+            metodos_count.columns = ['Método', 'Cantidad']
+            
+            fig = px.bar(
+                metodos_count,
+                x='Método',
+                y='Cantidad',
+                title='Frecuencia de Métodos de Pago',
+                color='Método'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col_p2:
+        if 'metodo_pago' in df_filtrado.columns and 'monto_neto' in df_filtrado.columns:
+            st.markdown("### 📊 Ingresos por Método de Pago")
+            ingresos_metodo = df_filtrado.groupby('metodo_pago')['monto_neto'].sum().reset_index()
+            
+            fig = px.pie(
+                ingresos_metodo,
+                values='monto_neto',
+                names='metodo_pago',
+                title='Distribución de Ingresos por Método de Pago'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+# TAB 5: ANÁLISIS GENERAL
+with tab5:
+    col_g1, col_g2 = st.columns(2)
+    
+    with col_g1:
+        if 'estado_reserva' in df_filtrado.columns:
+            st.markdown("### 📋 Estado de las Reservas")
+            estado_reservas = df_filtrado['estado_reserva'].value_counts().reset_index()
+            estado_reservas.columns = ['Estado', 'Cantidad']
+            
+            fig = px.pie(
+                estado_reservas,
+                values='Cantidad',
+                names='Estado',
+                title='Distribución por Estado de Reserva'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col_g2:
+        if 'servicio_especial' in df_filtrado.columns:
+            st.markdown("### ⭐ Servicios Especiales Más Solicitados")
+            servicios_count = df_filtrado['servicio_especial'].value_counts().reset_index()
+            servicios_count.columns = ['Servicio', 'Cantidad']
+            servicios_count = servicios_count[servicios_count['Servicio'] != 'Sin servicio'].head(10)
+            
+            if not servicios_count.empty:
+                fig = px.bar(
+                    servicios_count,
+                    x='Servicio',
+                    y='Cantidad',
+                    title='Servicios Especiales Más Populares',
+                    color='Servicio'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No hay servicios especiales registrados")
+
+# ============================================================
+# PIE DE PÁGINA
+# ============================================================
+st.divider()
+st.caption("🏨 Sistema de Gestión Hotelera - Base de Datos I 2024")
+
+# ============================================================
+# INFORMACIÓN DE DIAGNÓSTICO (SOLO DESARROLLO)
+# ============================================================
+with st.expander("🔧 Información Técnica (Desarrollo)", expanded=False):
+    st.write("### 📋 Columnas disponibles:")
+    st.write(list(df.columns))
+    
+    st.write("### 📊 Resumen estadístico:")
+    st.dataframe(df.describe())
+    
+    st.write("### 🔗 Conexión activa:")
+    st.code(f"URI: {DEFAULT_DB_URI}")
+    st.code(f"Registros totales: {len(df)}")
+    st.code(f"Registros filtrados: {len(df_filtrado)}")
