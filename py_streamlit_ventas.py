@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 # Cadena por defecto (puedes modificarla aquí)
-DEFAULT_DB_URI = "mysql+pymysql://root:@localhost:3306/proyecto"
+DEFAULT_DB_URI = "mysql+pymysql://root:@localhost:3307/proyecto"
 
 # ============================================================
 # FUNCIÓN DE CONEXIÓN (SIN CACHE → evita error de pickling)
