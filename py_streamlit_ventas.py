@@ -29,7 +29,7 @@ def get_engine(db_uri):
         st.success("✅ Conectado a la base de datos")
         return engine
     except Exception as e:
-        st.error(f"❌ Error conectando a la base de datos:\n{e}")
+        st.error(f"❌ Error conectando a la base de dato:\n{e}")
         return None
 
 # ============================================================
