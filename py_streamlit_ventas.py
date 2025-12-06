@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # CADENA DE CONEXIÓN CORRECTA PARA TU MYSQL LOCAL
-DEFAULT_DB_URI = "mysql+pymysql://root:luna12@localhot:3306/proyecto"
+DEFAULT_DB_URI = "mysql+pymysql://root:@localhot:3306/proyecto"
 
 # ============================================================
 # FUNCIÓN DE CONEXIÓN
