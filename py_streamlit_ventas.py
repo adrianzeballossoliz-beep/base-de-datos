@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # CADENA DE CONEXIÓN CORRECTA PARA TU MYSQL LOCAL
-DEFAULT_DB_URI = "mysql+pymysql://root:192.168.0.101:3307/proyecto"
+DEFAULT_DB_URI = "mysql+pymysql://root:localhost:3307/proyecto"
 
 # ============================================================
 # FUNCIÓN DE CONEXIÓN
@@ -29,7 +29,7 @@ def get_engine(db_uri):
         st.success("✅ Conectado a la base de datos")
         return engine
     except Exception as e:
-        st.error(f"❌ Error conectando a la base de dato:\n{e}")
+        st.error(f"❌ Error conectando a la base de datos:\n{e}")
         return None
 
 # ============================================================
