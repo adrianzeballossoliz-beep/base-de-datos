@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # CADENA DE CONEXIÓN - PUERTO 3307 como en tu MySQL Workbench
-DEFAULT_DB_URI = "mysql+pymysql://root:@localhost:3307/proyecto"
+DEFAULT_DB_URI = "mysql+pymysql://root:@localhost:3306/proyecto"
 
 # ============================================================================
 # FUNCIONES DE CONEXIÓN Y CARGA
