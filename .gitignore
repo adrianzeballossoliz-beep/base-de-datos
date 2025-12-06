@@ -1,0 +1,8 @@
+# Ignorar carpetas de entorno virtual (venv)
+.venv/
+venv/
+__pycache__/
+
+# Ignorar archivos de logs, datos grandes, etc.
+*.log
+*.db

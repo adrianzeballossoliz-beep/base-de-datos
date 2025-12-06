@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # CADENA DE CONEXIÓN CORRECTA
-DATABASE_URL = "mysql+mysqldb://root:@localhost/proyecto"
+DEFAULT_DB_URI = "mysql+mysqldb://root:@localhost/proyecto"
 # ============================================================
 # FUNCIÓN DE CONEXIÓN
 # ============================================================
