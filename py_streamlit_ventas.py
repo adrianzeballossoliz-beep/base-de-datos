@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # CONFIGURACIÓN DE LA PÁGINA
 # ============================================================
 st.set_page_config(
-    page_title="Dashboard Hotelero",
+    page_title="Dashboard Hoteero",
     layout="wide",
     initial_sidebar_state="expanded"
 )
