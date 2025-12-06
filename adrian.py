@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # CADENA DE CONEXIÓN CORRECTA
-DEFAULT_DB_URI = "mysql+pymysql://root:@127.0.0.1:3306/proyecto"
+DEFAULT_DB_URI = "pymysql://root:@127.0.0.1:3306/proyecto"
 
 # ============================================================
 # FUNCIÓN DE CONEXIÓN
