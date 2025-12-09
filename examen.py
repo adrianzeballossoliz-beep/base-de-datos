@@ -327,4 +327,4 @@ if __name__ == "__main__":
         st.sidebar.success("✅ Conectado a MySQL: ecoruta_db")
         conexion.close()
     else:
-        st.sidebar.error("⚠️ No se pudo conectar a la base de datos")
+        st.sidebar.error("⚠️ No se pudo conectar a la base de dato")
