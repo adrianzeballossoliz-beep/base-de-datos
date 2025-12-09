@@ -117,7 +117,7 @@ with st.sidebar:
         st.metric("Total Kilos", f"{total_kilos[0]['total']:,.2f} kg")
 
 # ================================================
-# 6. SECCIÓN PRINCIPAL - MÉTRICAS
+# 6. SECCIÓN PRINCIPAL - MÉTRICAS (VERSIÓN CORREGIDA)
 # ================================================
 st.header("📊 Métricas Clave")
 
@@ -125,29 +125,57 @@ st.header("📊 Métricas Clave")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    # Total de barrios
-    df_barrios = obtener_dataframe("SELECT COUNT(*) as total FROM barrio")
-    st.metric("🏘️ Barrios", df_barrios['total'][0])
+    # Total de barrios - VERSIÓN SEGURA
+    try:
+        df_barrios = obtener_dataframe("SELECT COUNT(*) as total FROM barrio")
+        if not df_barrios.empty and 'total' in df_barrios.columns:
+            valor = df_barrios.iloc[0]['total']
+        else:
+            valor = 0
+    except Exception as e:
+        st.error(f"Error barrios: {e}")
+        valor = 0
+    st.metric("🏘️ Barrios", valor)
 
 with col2:
-    # Total de recolectores
-    df_recolectores = obtener_dataframe("SELECT COUNT(*) as total FROM recolector")
-    st.metric("👷 Recolectores", df_recolectores['total'][0])
+    # Total de recolectores - VERSIÓN SEGURA
+    try:
+        df_recolectores = obtener_dataframe("SELECT COUNT(*) as total FROM recolector")
+        if not df_recolectores.empty and 'total' in df_recolectores.columns:
+            valor = df_recolectores.iloc[0]['total']
+        else:
+            valor = 0
+    except:
+        valor = 0
+    st.metric("👷 Recolectores", valor)
 
 with col3:
-    # Total de rutas
-    df_rutas = obtener_dataframe("SELECT COUNT(*) as total FROM ruta")
-    st.metric("🛣️ Rutas Activas", df_rutas['total'][0])
+    # Total de rutas - VERSIÓN SEGURA
+    try:
+        df_rutas = obtener_dataframe("SELECT COUNT(*) as total FROM ruta")
+        if not df_rutas.empty and 'total' in df_rutas.columns:
+            valor = df_rutas.iloc[0]['total']
+        else:
+            valor = 0
+    except:
+        valor = 0
+    st.metric("🛣️ Rutas Activas", valor)
 
 with col4:
-    # Eficiencia promedio
-    df_eficiencia = obtener_dataframe(
-        "SELECT AVG(CASE WHEN completada = 'Si' THEN 1 ELSE 0 END) * 100 as eficiencia FROM visita"
-    )
-    st.metric("📈 Eficiencia", f"{df_eficiencia['eficiencia'][0]:.1f}%")
-
-st.markdown("---")
-
+    # Eficiencia promedio - VERSIÓN SEGURA
+    try:
+        df_eficiencia = obtener_dataframe(
+            "SELECT AVG(CASE WHEN completada = 'Si' THEN 1 ELSE 0 END) * 100 as eficiencia FROM visita"
+        )
+        if not df_eficiencia.empty and 'eficiencia' in df_eficiencia.columns:
+            eficiencia_val = df_eficiencia.iloc[0]['eficiencia']
+            if eficiencia_val is None:
+                eficiencia_val = 0
+        else:
+            eficiencia_val = 0
+    except:
+        eficiencia_val = 0
+    st.metric("📈 Eficiencia", f"{eficiencia_val:.1f}%")
 # ================================================
 # 7. GRÁFICOS Y VISUALIZACIONES
 # ================================================
