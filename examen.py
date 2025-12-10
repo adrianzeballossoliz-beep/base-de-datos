@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import mysql.connector
+import pymysql
 import plotly.express as px
 
 # ==========================
@@ -19,7 +19,7 @@ st.markdown("### Análisis de rutas, barrios y recolectores")
 # CONEXIÓN A MYSQL
 # ==========================
 def get_connection():
-    return mysql.connector.connect(
+    return pymysql.connect(
         host="localhost",
         user="root",
         password="",    # <-- Cambia si tu MySQL tiene clave
