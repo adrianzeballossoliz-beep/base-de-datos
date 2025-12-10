@@ -2,9 +2,7 @@ streamlit
 pandas
 pymysql
 numpy
-matplotlib
-seaborn
 plotly-express
+mysql-connector-python
+plotly
 sqlalchemy
-Faker
-
