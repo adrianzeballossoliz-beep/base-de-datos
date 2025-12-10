@@ -1,9 +1,10 @@
-pandaspip 
+streamlit
+pandas
+pymysql
 numpy
 matplotlib
 seaborn
+plotly-express
 sqlalchemy
 Faker
 PyMySQL
-streamlit
-plotly-express
