@@ -22,7 +22,7 @@ def get_connection():
     return mysql.connector.connect(
         host="localhost",
         user="root",
-        password="",
+        password="",    # <-- Cambia si tu MySQL tiene clave
         database="ecoruta_db"
     )
 
@@ -52,37 +52,49 @@ def load_data():
     conn.close()
     return df
 
+# Cargar los datos
 df = load_data()
+
+# ==========================
+# NORMALIZAR FECHAS (SOLUCIÓN DEL ERROR)
+# ==========================
+df["fecha_visita"] = pd.to_datetime(df["fecha_visita"], errors="coerce").dt.normalize()
 
 # ==========================
 # FILTROS
 # ==========================
 st.sidebar.header("🔎 Filtros")
 
-fecha_min = df["fecha_visita"].min()
-fecha_max = df["fecha_visita"].max()
+fecha_min = df["fecha_visita"].min().date()
+fecha_max = df["fecha_visita"].max().date()
 
+# Rango de fechas desde Streamlit (devuelve datetime.date)
 rango_fechas = st.sidebar.date_input("Rango de fechas", (fecha_min, fecha_max))
+
 barrios_filtro = st.sidebar.multiselect("Barrio", df["nombre_barrio"].unique())
 recolector_filtro = st.sidebar.multiselect("Recolector", df["recolector"].unique())
 
+# Copia del dataframe
 df_filtrado = df.copy()
 
-# Filtro de fechas
-# Conversión segura de fechas para evitar el error Timestamp vs datetime.date
-fecha_inicio = pd.to_datetime(rango_fechas[0])
-fecha_fin = pd.to_datetime(rango_fechas[1])
+# ==========================
+# FILTRO POR FECHAS — VERSIÓN A PRUEBA DE ERRORES
+# ==========================
+if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
 
-df_filtrado = df_filtrado[
-    (df_filtrado["fecha_visita"] >= fecha_inicio) &
-    (df_filtrado["fecha_visita"] <= fecha_fin)
-]
+    fecha_inicio = pd.to_datetime(rango_fechas[0])
+    fecha_fin = pd.to_datetime(rango_fechas[1])
 
-# Filtro de barrios
+    df_filtrado = df_filtrado[
+        (df_filtrado["fecha_visita"] >= fecha_inicio) &
+        (df_filtrado["fecha_visita"] <= fecha_fin)
+    ]
+
+# Filtro por barrios
 if barrios_filtro:
     df_filtrado = df_filtrado[df_filtrado["nombre_barrio"].isin(barrios_filtro)]
 
-# Filtro de recolectores
+# Filtro por recolectores
 if recolector_filtro:
     df_filtrado = df_filtrado[df_filtrado["recolector"].isin(recolector_filtro)]
 
@@ -98,8 +110,16 @@ st.dataframe(df_filtrado, use_container_width=True)
 col1, col2, col3 = st.columns(3)
 
 total_kg = df_filtrado["cantidad_kg"].sum()
-ruta_top = df_filtrado["nombre_ruta"].value_counts().idxmax()
-recolector_top = df_filtrado["recolector"].value_counts().idxmax()
+
+ruta_top = (
+    df_filtrado["nombre_ruta"].value_counts().idxmax()
+    if len(df_filtrado) > 0 else "N/A"
+)
+
+recolector_top = (
+    df_filtrado["recolector"].value_counts().idxmax()
+    if len(df_filtrado) > 0 else "N/A"
+)
 
 col1.metric("Total Kg Recolectados", f"{total_kg:.2f} kg")
 col2.metric("Ruta con más visitas", ruta_top)
@@ -121,7 +141,7 @@ kg_recolector = df_filtrado.groupby("recolector")["cantidad_kg"].sum().reset_ind
 fig2 = px.pie(kg_recolector, names="recolector", values="cantidad_kg", title="Kg por Recolector")
 st.plotly_chart(fig2, use_container_width=True)
 
-# 3) Línea – cantidad recolectada por fecha
+# 3) Línea – kg por fecha
 st.subheader("📈 Kg recolectados por fecha")
 kg_fecha = df_filtrado.groupby("fecha_visita")["cantidad_kg"].sum().reset_index()
 fig3 = px.line(kg_fecha, x="fecha_visita", y="cantidad_kg", title="Kg por Fecha")
